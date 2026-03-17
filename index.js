@@ -1,5 +1,7 @@
 const { Client } = require('pg');
 const { Builder, By, until } = require('selenium-webdriver');
+const chrome = require('selenium-webdriver/chrome');
+require('chromedriver'); // Auto-configura o binário nativo para o Selenium
 
 require('dotenv').config();
 
