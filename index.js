@@ -20,6 +20,8 @@ const chrome = require('selenium-webdriver/chrome');
 async function runScraper() {
     let options = new chrome.Options();
     options.addArguments('--headless=new'); // Run headless Chrome
+    options.addArguments('--no-sandbox');
+    options.addArguments('--disable-dev-shm-usage');
     
     let driver = await new Builder().forBrowser('chrome').setChromeOptions(options).build();
     try {

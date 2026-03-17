@@ -23,6 +23,14 @@ jobs:
       - name: Install Dependencies
         run: npm install
         
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+          
+      - name: Setup ChromeDriver
+        uses: nanasess/setup-chromedriver@v2
+
       - name: Run Script
         env:
           # Segredos do Banco de Dados
