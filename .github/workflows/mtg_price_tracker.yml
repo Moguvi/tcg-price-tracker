@@ -26,13 +26,6 @@ jobs:
           npm install
           chmod +x node_modules/selenium-webdriver/bin/linux/selenium-manager || true
         
-      - name: Setup Chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-          
-      - name: Setup ChromeDriver
-        uses: nanasess/setup-chromedriver@v2
 
       - name: Run Script
         env:

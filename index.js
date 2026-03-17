@@ -1,7 +1,6 @@
 const { Client } = require('pg');
 const { Builder, By, until } = require('selenium-webdriver');
 const chrome = require('selenium-webdriver/chrome');
-require('chromedriver'); // Auto-configura o binário nativo para o Selenium
 
 require('dotenv').config();
 
@@ -23,7 +22,14 @@ async function runScraper() {
     options.addArguments('--no-sandbox');
     options.addArguments('--disable-dev-shm-usage');
     
-    let driver = await new Builder().forBrowser('chrome').setChromeOptions(options).build();
+    // Força o Selenium a usar o driver global do sistema Linux (instalado direto no Action)
+    let service = new chrome.ServiceBuilder('chromedriver');
+    
+    let driver = await new Builder()
+        .forBrowser('chrome')
+        .setChromeOptions(options)
+        .setChromeService(service)
+        .build();
     try {
         console.log("Navigating to LigaMagic...");
         await driver.get('https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=1');
