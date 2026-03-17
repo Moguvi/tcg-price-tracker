@@ -17,8 +17,6 @@ pgClient.connect(err => {
     }
 });
 
-const chrome = require('selenium-webdriver/chrome');
-
 async function runScraper() {
     let options = new chrome.Options();
     options.addArguments('--headless=new'); // Run headless Chrome
