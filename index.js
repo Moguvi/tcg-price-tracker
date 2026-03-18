@@ -14,22 +14,19 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl || 'https://xxxxxxxx.supabase.co', supabaseKey || 'public-anon-key');
 console.log('Connected to Supabase via REST API');
 
-// Sources to scrape
+// Sources to scrape — variacao = NULL for all sources
 const SOURCES = [
     {
         label: 'Alta',
         url: 'https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=1',
-        hasVariacao: true
     },
     {
         label: 'Queda',
         url: 'https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=1',
-        hasVariacao: true
     },
     {
         label: 'Hits (Mais Vistos)',
         url: 'https://www.ligamagic.com.br/?view=cards/hits&formato=1',
-        hasVariacao: false  // variacao = NULL
     },
 ];
 
@@ -94,42 +91,16 @@ async function scrapePage(driver, source, today) {
             if (!cardName) { skipped++; continue; }
 
             let minPrice = null;
-            let variation = null;
+            const variation = null; // variacao = NULL for all sources
 
-            if (source.hasVariacao) {
-                // Alta/Queda layout:
-                // col[5] = variação (e.g. "34,35"), col[6] = preço mínimo (e.g. "R$ 128,74")
-                // col[4] may also be variacao depending on table structure — try both
-
-                // Try col index 6 for price first (7 cols usually: img, name, ed, rar, tipo, var, price)
-                if (cells.length >= 7) {
-                    const priceText = (await cells[6].getAttribute('textContent')).trim();
-                    const varText   = (await cells[5].getAttribute('textContent')).trim();
-                    minPrice = parseBRL(priceText);
-                    variation = parseBRL(varText);
-                } else if (cells.length >= 6) {
-                    // Fallback: 6-col layout
-                    const priceText = (await cells[5].getAttribute('textContent')).trim();
-                    const varText   = (await cells[4].getAttribute('textContent')).trim();
-                    minPrice = parseBRL(priceText);
-                    variation = parseBRL(varText);
-                }
-
-                // Check for rank-down icon (negative variation)
-                try {
-                    const downIcon = await rows[i].findElements(By.css('i.rank-down, img[src*="rank-down"], img[data-src*="rank-down"]'));
-                    if (downIcon.length > 0 && variation !== null) {
-                        variation = -Math.abs(variation);
-                    }
-                } catch (_) {}
-
-            } else {
-                // Hits layout: no variation column, price is in col[5]
-                if (cells.length >= 6) {
-                    const priceText = (await cells[5].getAttribute('textContent')).trim();
-                    minPrice = parseBRL(priceText);
-                }
-                variation = null;
+            // Price is in the last meaningful column — try col[6] then col[5]
+            if (cells.length >= 7) {
+                const priceText = (await cells[6].getAttribute('textContent')).trim();
+                minPrice = parseBRL(priceText);
+            }
+            if ((minPrice === null || isNaN(minPrice)) && cells.length >= 6) {
+                const priceText = (await cells[5].getAttribute('textContent')).trim();
+                minPrice = parseBRL(priceText);
             }
 
             if (!cardName || minPrice === null || isNaN(minPrice)) {
