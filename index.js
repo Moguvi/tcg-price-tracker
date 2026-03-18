@@ -1,20 +1,18 @@
-const { Client } = require('pg');
+const { createClient } = require('@supabase/supabase-js');
 const { Builder, By, until } = require('selenium-webdriver');
 const chrome = require('selenium-webdriver/chrome');
 
 require('dotenv').config();
 
-const pgClient = new Client({
-    connectionString: process.env.DATABASE_URL || 'postgresql://service_account:ronin1234@localhost:5432/ligamagic'
-});
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
 
-pgClient.connect(err => {
-    if (err) {
-        console.error('Connection error', err.stack);
-    } else {
-        console.log('Connected to PostgreSQL database');
-    }
-});
+if (!supabaseUrl || !supabaseKey) {
+    console.error("Missing SUPABASE_URL or SUPABASE_KEY in config.");
+}
+
+const supabase = createClient(supabaseUrl || 'https://xxxxxxxx.supabase.co', supabaseKey || 'public-anon-key');
+console.log('Connected to Supabase via REST API');
 
 async function runScraper() {
     let options = new chrome.Options();
@@ -45,12 +43,6 @@ async function runScraper() {
         console.log(`Found ${cardItems.length} cards.`);
 
         const today = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
-        const insertQuery = `
-            INSERT INTO lista_cartas_dia (dia, carta, preco_min, variacao) 
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (dia, carta) 
-            DO UPDATE SET preco_min = EXCLUDED.preco_min, variacao = EXCLUDED.variacao
-        `;
 
         for (let item of cardItems) {
             try {
@@ -81,8 +73,19 @@ async function runScraper() {
 
                     console.log(`Saving: ${cardName} | Min: ${minPrice} | Var: ${variation}`);
                     
-                    // Insert into DB
-                    await pgClient.query(insertQuery, [today, cardName, minPrice, variation]);
+                    // Upsert into Supabase
+                    const { error } = await supabase
+                        .from('lista_cartas_dia')
+                        .upsert({
+                            dia: today,
+                            carta: cardName,
+                            preco_min: minPrice,
+                            variacao: variation
+                        }, { onConflict: 'dia,carta' });
+                        
+                    if (error) {
+                        console.error(`Error saving card ${cardName}:`, error.message);
+                    }
                 } else {
                     console.log(`Could not find prices for card: ${cardName}`);
                 }
@@ -97,13 +100,6 @@ async function runScraper() {
         console.error("Scraper Error:", err);
     } finally {
         await driver.quit();
-        pgClient.end((err) => {
-            if (err) {
-                console.error("Error closing database", err.stack);
-            } else {
-                console.log("Database connection closed.");
-            }
-        });
     }
 }
 

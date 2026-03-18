@@ -30,7 +30,8 @@ jobs:
       - name: Run Script
         env:
           # Segredos do Banco de Dados
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           # Segredo do Firecrawl
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
         run: node run.js

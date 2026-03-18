@@ -1,10 +1,15 @@
 require('dotenv').config();
-const { Client } = require('pg');
+const { createClient } = require('@supabase/supabase-js');
 const FirecrawlApp = require('@mendable/firecrawl-js').default;
 
-const pgClient = new Client({
-    connectionString: process.env.DATABASE_URL || 'postgresql://service_account:ronin1234@localhost:5432/ligamagic'
-});
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+    console.error("Missing SUPABASE_URL or SUPABASE_KEY in config.");
+}
+
+const supabase = createClient(supabaseUrl || 'https://xxxxxxxx.supabase.co', supabaseKey || 'public-anon-key');
 
 const firecrawl = new FirecrawlApp({
     apiKey: process.env.FIRECRAWL_API_KEY
@@ -12,17 +17,21 @@ const firecrawl = new FirecrawlApp({
 
 async function runAdvancedSearch() {
     try {
-        await pgClient.connect();
-        console.log('Connected to PostgreSQL database');
+        console.log('Connected to Supabase via REST API');
 
         // Get distinct cards from the last 90 days
-        const query = `
-            SELECT DISTINCT carta 
-            FROM lista_cartas_dia 
-            WHERE carta IS NOT NULL AND TO_DATE(dia, 'YYYY-MM-DD') >= CURRENT_DATE - INTERVAL '90 days'
-        `;
-        const res = await pgClient.query(query);
-        const cards = res.rows.map(row => row.carta);
+        const dateObj = new Date();
+        const ninetyDaysAgo = new Date(dateObj.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        
+        const { data: resRows, error: selectError } = await supabase
+            .from('lista_cartas_dia')
+            .select('carta')
+            .gte('dia', ninetyDaysAgo)
+            .not('carta', 'is', null);
+            
+        if (selectError) throw selectError;
+        
+        const cards = [...new Set(resRows.map(row => row.carta))];
 
         console.log(`Found ${cards.length} distinct cards from the last 90 days.`);
 
@@ -74,12 +83,6 @@ There can be multiple editions and for each edition there can be multiple versio
                         console.log('No records found for this card.');
                     } else {
                         const today = new Date().toISOString().split('T')[0];
-                        const insertQuery = `
-                            INSERT INTO his_precos_ligamagic (data, carta, edicao, ano, raridade, tipo_carta, preco_min, preco_medio) 
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                            ON CONFLICT (data, carta, edicao, tipo_carta) 
-                            DO UPDATE SET preco_min = EXCLUDED.preco_min, preco_medio = EXCLUDED.preco_medio
-                        `;
 
                         for (let [index, record] of records.entries()) {
                             console.log(`Registro ${index + 1}:`);
@@ -93,18 +96,21 @@ There can be multiple editions and for each edition there can be multiple versio
                             console.log('');
 
                             try {
-                                // ano is retrieved as string, must parse to int, handling empty safely
                                 const ano = parseInt(record.Ano) || 0;
-                                await pgClient.query(insertQuery, [
-                                    today,
-                                    record.Nome_da_carta,
-                                    record.Edição,
-                                    ano,
-                                    record.Raridade,
-                                    record.Tipo_Carta,
-                                    record.Preço_Mínimo,
-                                    record.Preço_Médio
-                                ]);
+                                const { error: upsertError } = await supabase
+                                    .from('his_precos_ligamagic')
+                                    .upsert({
+                                        data: today,
+                                        carta: record.Nome_da_carta,
+                                        edicao: record.Edição,
+                                        ano: ano,
+                                        raridade: record.Raridade,
+                                        tipo_carta: record.Tipo_Carta,
+                                        preco_min: record.Preço_Mínimo,
+                                        preco_medio: record.Preço_Médio
+                                    }, { onConflict: 'data,carta,edicao,tipo_carta' });
+                                
+                                if (upsertError) throw upsertError;
                             } catch (e) {
                                 console.error('Error inserting record:', e.message);
                             }
@@ -123,8 +129,6 @@ There can be multiple editions and for each edition there can be multiple versio
 
     } catch (err) {
         console.error('Database query failed:', err);
-    } finally {
-        await pgClient.end();
     }
 }
 
