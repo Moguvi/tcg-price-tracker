@@ -108,11 +108,54 @@ async function runScraper() {
         }
 
         console.log('\n✅ Todos os scrapers concluídos!');
+        await deduplicateToday(today);
 
     } catch (err) {
         console.error('Scraper Error:', err);
     } finally {
         await driver.quit();
+    }
+}
+
+// Remove duplicate (dia, carta) rows keeping only the record with lowest id
+async function deduplicateToday(today) {
+    console.log('\n🧹 Removendo duplicatas de lista_cartas_dia...');
+    try {
+        const { data, error } = await supabase
+            .from('lista_cartas_dia')
+            .select('id, dia, carta')
+            .eq('dia', today)
+            .order('id', { ascending: true });
+
+        if (error) throw error;
+
+        // Group by carta, keep the first id (lowest), collect the rest for deletion
+        const seen = new Map();
+        const toDelete = [];
+
+        for (const row of data) {
+            if (seen.has(row.carta)) {
+                toDelete.push(row.id);
+            } else {
+                seen.set(row.carta, row.id);
+            }
+        }
+
+        if (toDelete.length === 0) {
+            console.log('  ✅ Nenhuma duplicata encontrada.');
+            return;
+        }
+
+        const { error: delError } = await supabase
+            .from('lista_cartas_dia')
+            .delete()
+            .in('id', toDelete);
+
+        if (delError) throw delError;
+
+        console.log(`  ✅ ${toDelete.length} duplicata(s) removida(s).`);
+    } catch (e) {
+        console.error('  Erro na deduplicação:', e.message);
     }
 }
 
