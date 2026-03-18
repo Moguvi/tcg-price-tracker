@@ -125,13 +125,13 @@ async function runScraper() {
 }
 
 async function deduplicateToday(today) {
-    console.log('\n🧹 Removendo duplicatas de lista_cartas_dia...');
+    console.log('\n🧹 Removendo duplicatas de lista_cartas_dia (Priorizando quem tem mais visualizações)...');
     try {
         const { data, error } = await supabase
             .from('lista_cartas_dia')
-            .select('id, dia, carta')
+            .select('id, dia, carta, visualizacoes')
             .eq('dia', today)
-            .order('id', { ascending: true });
+            .order('visualizacoes', { ascending: false }); // Prioriza quem tem mais views no topo
 
         if (error) throw error;
 
