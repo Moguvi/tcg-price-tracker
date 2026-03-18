@@ -10,19 +10,26 @@ function runScript(scriptName) {
         const scriptPath = path.join(__dirname, scriptName);
         
         // Spawn o processo child do script .js atual
-        const process = spawn('node', [scriptPath]);
+        const proc = spawn('node', [scriptPath]);
 
-        // Redireciona stdout e stderr para o console atual
-        process.stdout.on('data', (data) => {
-            console.log(`[${scriptName}] ${data.toString().trim()}`);
+        // Redireciona stdout line-by-line
+        proc.stdout.on('data', (data) => {
+            const lines = data.toString().split('\n');
+            lines.forEach(line => {
+                if (line.trim()) console.log(`[${scriptName}] ${line.trim()}`);
+            });
         });
 
-        process.stderr.on('data', (data) => {
-            console.error(`[${scriptName} ERROR] ${data.toString().trim()}`);
+        // Redireciona stderr line-by-line
+        proc.stderr.on('data', (data) => {
+            const lines = data.toString().split('\n');
+            lines.forEach(line => {
+                if (line.trim()) console.error(`[${scriptName} ERROR] ${line.trim()}`);
+            });
         });
 
         // Quando o script terminar
-        process.on('close', (code) => {
+        proc.on('close', (code) => {
             if (code === 0) {
                 console.log(`\n✅ Script ${scriptName} finalizado com sucesso.\n`);
                 resolve();

@@ -1,10 +1,13 @@
-const { createClient } = require('@supabase/supabase-js');
-const { Builder, By, until } = require('selenium-webdriver');
-const chrome = require('selenium-webdriver/chrome');
-
+/**
+ * INDEX.JS - FIRECRAWL VERSION (Bypasses Cloudflare ASN Bans)
+ * -----------------------------------------------------------
+ */
 try {
     require('dotenv').config();
 } catch (_) {}
+
+const { createClient } = require('@supabase/supabase-js');
+const FirecrawlApp = require('@mendable/firecrawl-js').default;
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
@@ -15,6 +18,13 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl || 'https://xxxxxxxx.supabase.co', supabaseKey || 'public-anon-key');
 
+const firecrawl = new FirecrawlApp({
+    apiKey: process.env.FIRECRAWL_API_KEY
+});
+
+// SDK v4: inicialização padrão e acesso métodos via .v1
+const api = firecrawl.v1 || firecrawl;
+
 const FORMATOS = [1, 2, 3, 5, 6, 7, 8];
 
 const SOURCES = FORMATOS.flatMap(f => [
@@ -23,59 +33,34 @@ const SOURCES = FORMATOS.flatMap(f => [
     { label: `Hits (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=1` },
 ]);
 
-console.log(`Total de fontes: ${SOURCES.length}`);
+async function scrapePage(source, today) {
+    console.log(`\n  → [${source.label}] Investigando: ${source.url}`);
 
-async function scrapePage(driver, source, today) {
     try {
-        console.log(`\n  → [${source.label}]: ${source.url}`);
-        await driver.get(source.url);
-
-        const title = await driver.getTitle();
-        console.log(`  [DEBUG] Titulo da Pagina: ${title}`);
-
-        if (title.includes("Cloudflare") || title.includes("Just a moment")) {
-            console.log("  ⚠ Acesso Negado/Bloqueado por Cloudflare!");
-        }
-
-        // Wait for body first to ensure page loaded
-        await driver.wait(until.elementLocated(By.css('body')), 20000);
-        await driver.sleep(5000); // Give extra time for JS to render table
-
-        // Optional: Switch to list view if button exists
-        try {
-            const listBtn = await driver.findElement(By.css('.tb-view-02'));
-            await listBtn.click();
-            await driver.sleep(2000);
-        } catch (_) {}
-
-        // Get all table rows - more generic selector to avoid Timeout on specific links
-        let rows = [];
-        try {
-            await driver.wait(until.elementLocated(By.css('table tr')), 10000);
-            rows = await driver.findElements(By.css('table tr'));
-        } catch (e) {
-            console.log(`  [${source.label}] ⚠ Nenhuma tabela encontrada.`);
-            const bodySnippet = (await driver.findElement(By.css('body')).getAttribute('innerText')).substring(0, 300);
-            console.log(`  [DEBUG] Body Snippet: ${bodySnippet.replace(/\n/g, ' ')}`);
-            return;
-        }
-
-        console.log(`  → ${rows.length} linhas encontradas`);
-
-        let saved = 0;
-        for (const row of rows) {
-            try {
-                const cells = await row.findElements(By.css('td'));
-                if (cells.length < 2) continue;
-
-                let cardName = '';
-                try {
-                    const link = await cells[1].findElement(By.css('a'));
-                    cardName = (await link.getText()).trim();
-                } catch (_) {
-                    cardName = (await cells[1].getAttribute('textContent')).trim();
+        const scrapeResult = await api.scrapeUrl(source.url, {
+            formats: ['json'],
+            jsonOptions: {
+                prompt: "Extract all Magic: The Gathering card names listed in this variation/hits table. Return a simple list of strings.",
+                schema: {
+                    type: 'object',
+                    properties: {
+                        cards: {
+                            type: 'array',
+                            items: { type: 'string' }
+                        }
+                    },
+                    required: ['cards']
                 }
+            }
+        });
 
+        if (scrapeResult.success && scrapeResult.json && scrapeResult.json.cards) {
+            const cardsFound = scrapeResult.json.cards;
+            console.log(`  ✅ ${cardsFound.length} cartas identificadas pela IA.`);
+
+            let saved = 0;
+            for (const cardNameRaw of cardsFound) {
+                const cardName = cardNameRaw.trim();
                 if (!cardName) continue;
 
                 const { error } = await supabase
@@ -83,53 +68,38 @@ async function scrapePage(driver, source, today) {
                     .upsert({ dia: today, carta: cardName }, { onConflict: 'dia,carta' });
 
                 if (!error) saved++;
-
-            } catch (err) { }
+            }
+            console.log(`  ✅ [${source.label}]: ${saved} cartas salvas no Supabase.`);
+        } else {
+            console.log(`  ⚠ Erro no Scrape do Firecrawl: ${scrapeResult.error || 'sem dados JSON'}`);
         }
-        console.log(`  ✅ [${source.label}]: ${saved} cartas salvas.`);
 
     } catch (err) {
-        console.error(`  [${source.label}] Error:`, err.message);
+        console.error(`  ❌ [${source.label}] Erro Fatal:`, err.message);
     }
 }
 
 async function runScraper() {
-    let options = new chrome.Options();
-    options.addArguments('--headless=new');
-    options.addArguments('--no-sandbox');
-    options.addArguments('--disable-dev-shm-usage');
-    options.addArguments('--window-size=1920,1080');
-    options.addArguments('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    console.log('[index.js] Iniciando coleta de nomes de cartas via Firecrawl...');
+    const today = new Date().toISOString().split('T')[0];
 
-    let driver;
     try {
-        driver = await new Builder()
-            .forBrowser('chrome')
-            .setChromeOptions(options)
-            .build();
-
-        const today = new Date().toISOString().split('T')[0];
-
         for (const source of SOURCES) {
-            try {
-                await scrapePage(driver, source, today);
-            } catch (pErr) {
-                console.error(`  [${source.label}] Page Error:`, pErr.message);
-            }
+            await scrapePage(source, today);
+            // Pequeno delay entre fontes para respeitar rate limits e fluidez
+            await new Promise(r => setTimeout(r, 1000));
         }
 
-        console.log('\n✅ Todos os scrapers concluídos!');
+        console.log('\n✅ Todos os scrapers de lista concluídos!');
         await deduplicateToday(today);
 
     } catch (err) {
-        console.error('Scraper Error:', err.message);
-    } finally {
-        if (driver) await driver.quit();
+        console.error('Global Scraper Error:', err.message);
     }
 }
 
 async function deduplicateToday(today) {
-    console.log('\n🧹 Removendo duplicatas...');
+    console.log('\n🧹 Removendo duplicatas de lista_cartas_dia...');
     try {
         const { data, error } = await supabase
             .from('lista_cartas_dia')
@@ -141,6 +111,7 @@ async function deduplicateToday(today) {
 
         const seen = new Map();
         const toDelete = [];
+
         for (const row of data) {
             if (seen.has(row.carta)) {
                 toDelete.push(row.id);
@@ -150,13 +121,18 @@ async function deduplicateToday(today) {
         }
 
         if (toDelete.length > 0) {
-            await supabase.from('lista_cartas_dia').delete().in('id', toDelete);
+            const { error: delError } = await supabase
+                .from('lista_cartas_dia')
+                .delete()
+                .in('id', toDelete);
+
+            if (delError) throw delError;
             console.log(`  ✅ ${toDelete.length} duplicata(s) removida(s).`);
         } else {
             console.log('  ✅ Nenhuma duplicata encontrada.');
         }
     } catch (e) {
-        console.error('  Deduplication Error:', e.message);
+        console.error('  Erro na deduplicação:', e.message);
     }
 }
 
