@@ -14,11 +14,16 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl || 'https://xxxxxxxx.supabase.co', supabaseKey || 'public-anon-key');
 console.log('Connected to Supabase via REST API');
 
-const SOURCES = [
-    { label: 'Alta',            url: 'https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=1' },
-    { label: 'Queda',           url: 'https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=1' },
-    { label: 'Hits (Mais Vistos)', url: 'https://www.ligamagic.com.br/?view=cards/hits&formato=1' },
-];
+const FORMATOS = [1, 2, 3, 5, 6, 7, 8];
+
+const SOURCES = FORMATOS.flatMap(f => [
+    { label: `Alta (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=${f}&order=1` },
+    { label: `Queda (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=${f}&order=1` },
+    { label: `Hits (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=1` },
+]);
+
+console.log(`Total de fontes: ${SOURCES.length}`); // 21 fontes
+
 
 async function scrapePage(driver, source, today) {
     console.log(`\n  → [${source.label}]: ${source.url}`);
