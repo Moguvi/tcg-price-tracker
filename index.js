@@ -4,7 +4,7 @@
  */
 try {
     require('dotenv').config();
-} catch (_) {}
+} catch (_) { }
 
 const { createClient } = require('@supabase/supabase-js');
 const FirecrawlApp = require('@mendable/firecrawl-js').default;
@@ -25,18 +25,18 @@ const firecrawl = new FirecrawlApp({
 // SDK v4: inicialização padrão e acesso métodos via .v1
 const api = firecrawl.v1 || firecrawl;
 
-const FORMATOS = [1, 2, 3, 5, 6, 7, 8];
+const FORMATOS = [2, 5, 6, 7];
 
 const SOURCES = [
     ...FORMATOS.flatMap(f => [
-        { label: `Alta (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=${f}&order=2` },
+        { label: `Alta (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=${f}&order=2` },
         { label: `Queda (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=${f}&order=2` },
-        { label: `Hits (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=2` },
+        { label: `Hits (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=2` },
     ]),
     // Pokémon Links (Static)
-    { label: "PKMN Alta",  url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=alta&formato=&order=2" },
+    { label: "PKMN Alta", url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=alta&formato=&order=2" },
     { label: "PKMN Queda", url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=queda&formato=&order=2" },
-    { label: "PKMN Hits",  url: "https://www.ligapokemon.com.br/?view=cards/hits&show=alta&formato=&order=2" }
+    { label: "PKMN Hits", url: "https://www.ligapokemon.com.br/?view=cards/hits&show=alta&formato=&order=2" }
 ];
 
 async function scrapePage(source, today) {
@@ -48,9 +48,9 @@ async function scrapePage(source, today) {
         const scrapeResult = await api.scrapeUrl(source.url, {
             formats: ['json'],
             jsonOptions: {
-                prompt: isHits 
-                    ? "Extract all Magic: The Gathering card names and their corresponding number of views (Visualizações) from the table. Return a list of objects with 'name' and 'views'."
-                    : "Extract all Magic: The Gathering card names listed in this variation table. Return a list of strings.",
+                prompt: isHits
+                    ? "Extract all card names and their corresponding number of views (Visualizações) from the table. Return a list of objects with 'name' and 'views'."
+                    : "Extract all card names listed in this variation table. Return a list of strings.",
                 schema: isHits ? {
                     type: 'object',
                     properties: {
@@ -93,8 +93,8 @@ async function scrapePage(source, today) {
 
                 const { error } = await supabase
                     .from('lista_cartas_dia')
-                    .upsert({ 
-                        dia: today, 
+                    .upsert({
+                        dia: today,
                         carta: cardName,
                         visualizacoes: views
                     }, { onConflict: 'dia,carta' });
