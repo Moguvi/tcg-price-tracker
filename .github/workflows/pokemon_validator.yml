@@ -1,0 +1,33 @@
+name: Pokemon Extraction Validator Weekly
+
+on:
+  schedule:
+    # 12:00 UTC corresponde a 09:00 AM no horário de Brasília (BRT/UTC-3)
+    # Rodar todos os sábados (6)
+    - cron: '0 12 * * 6'
+  workflow_dispatch: # Permite rodar manualmente no GitHub
+
+jobs:
+  validate-pokemon:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Install Dependencies
+        run: |
+          npm install
+        
+      - name: Run Pokemon Validator
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+        run: node validate_pokemon.js
