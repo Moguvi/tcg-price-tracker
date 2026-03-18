@@ -2,17 +2,23 @@ const { createClient } = require('@supabase/supabase-js');
 const { Builder, By, until } = require('selenium-webdriver');
 const chrome = require('selenium-webdriver/chrome');
 
-require('dotenv').config();
+try {
+    require('dotenv').config();
+} catch (_) {}
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-    console.error("Missing SUPABASE_URL or SUPABASE_KEY in config.");
+    console.warn("⚠ Warning: SUPABASE_URL or SUPABASE_KEY not found in environment. The script might fail.");
 }
 
 const supabase = createClient(supabaseUrl || 'https://xxxxxxxx.supabase.co', supabaseKey || 'public-anon-key');
-console.log('Connected to Supabase via REST API');
+
+// SDK v4: inicialização padrão e acesso métodos via .v1
+const firecrawl = new FirecrawlApp({
+    apiKey: process.env.FIRECRAWL_API_KEY
+});
 
 const FORMATOS = [1, 2, 3, 5, 6, 7, 8];
 
@@ -26,25 +32,30 @@ console.log(`Total de fontes: ${SOURCES.length}`); // 21 fontes
 
 
 async function scrapePage(driver, source, today) {
-    console.log(`\n  → [${source.label}]: ${source.url}`);
-    await driver.get(source.url);
-
-    await driver.wait(until.elementLocated(By.css('a[href*="view=cards/card"]')), 15000);
-    await driver.sleep(3000);
-
-    // Switch to list view
     try {
-        const listBtn = await driver.findElement(By.css('.tb-view-02'));
-        await listBtn.click();
-        await driver.sleep(2000);
-    } catch (_) {}
+        console.log(`\n  → [${source.label}]: ${source.url}`);
+        await driver.get(source.url);
 
-    // Get all table rows
-    let rows = [];
-    try {
-        await driver.wait(until.elementLocated(By.css('table tr')), 5000);
-        rows = await driver.findElements(By.css('table tr'));
-    } catch (_) {}
+        // Wait for body first to ensure page loaded
+        await driver.wait(until.elementLocated(By.css('body')), 20000);
+        await driver.sleep(5000); // Give extra time for JS to render table
+
+        // Optional: Switch to list view if button exists
+        try {
+            const listBtn = await driver.findElement(By.css('.tb-view-02'));
+            await listBtn.click();
+            await driver.sleep(2000);
+        } catch (_) {}
+
+        // Get all table rows - more generic selector to avoid Timeout on specific links
+        let rows = [];
+        try {
+            await driver.wait(until.elementLocated(By.css('table tr')), 10000);
+            rows = await driver.findElements(By.css('table tr'));
+        } catch (e) {
+            console.log(`  [${source.label}] ⚠ Nenhuma tabela encontrada ou timeout.`);
+            return;
+        }
 
     console.log(`  → ${rows.length} linhas encontradas`);
 
@@ -84,6 +95,10 @@ async function scrapePage(driver, source, today) {
     }
 
     console.log(`  ✅ [${source.label}]: ${saved} cartas salvas.`);
+
+    } catch (err) {
+        console.error(`  [${source.label}] Error:`, err.message);
+    }
 }
 
 async function runScraper() {
@@ -93,25 +108,27 @@ async function runScraper() {
     options.addArguments('--disable-dev-shm-usage');
     options.addArguments('--window-size=1280,900');
 
-    let service = new chrome.ServiceBuilder('chromedriver');
     let driver = await new Builder()
         .forBrowser('chrome')
         .setChromeOptions(options)
-        .setChromeService(service)
         .build();
 
     try {
         const today = new Date().toISOString().split('T')[0];
 
         for (const source of SOURCES) {
-            await scrapePage(driver, source, today);
+            try {
+                await scrapePage(driver, source, today);
+            } catch (pageErr) {
+                console.error(`  [${source.label}] Fatal page error:`, pageErr.message);
+            }
         }
 
         console.log('\n✅ Todos os scrapers concluídos!');
         await deduplicateToday(today);
 
     } catch (err) {
-        console.error('Scraper Error:', err);
+        console.error('Global Scraper Error:', err);
     } finally {
         await driver.quit();
     }
