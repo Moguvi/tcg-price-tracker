@@ -15,11 +15,6 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl || 'https://xxxxxxxx.supabase.co', supabaseKey || 'public-anon-key');
 
-// SDK v4: inicialização padrão e acesso métodos via .v1
-const firecrawl = new FirecrawlApp({
-    apiKey: process.env.FIRECRAWL_API_KEY
-});
-
 const FORMATOS = [1, 2, 3, 5, 6, 7, 8];
 
 const SOURCES = FORMATOS.flatMap(f => [
