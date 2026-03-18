@@ -14,90 +14,142 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl || 'https://xxxxxxxx.supabase.co', supabaseKey || 'public-anon-key');
 console.log('Connected to Supabase via REST API');
 
+// Pages to scrape: { url, hasVariacao }
+const SOURCES = [
+    {
+        label: 'Alta',
+        url:   'https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=1',
+        hasVariacao: true
+    },
+    {
+        label: 'Queda',
+        url:   'https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=1',
+        hasVariacao: true
+    },
+    {
+        label: 'Hits (Mais Vistos)',
+        url:   'https://www.ligamagic.com.br/?view=cards/hits&formato=1',
+        hasVariacao: false   // variacao = NULL for this source
+    },
+];
+
+// ─── Scrape one page ──────────────────────────────────────────────────────────
+async function scrapePage(driver, source, today) {
+    console.log(`\n  → Acessando [${source.label}]: ${source.url}`);
+    await driver.get(source.url);
+
+    await driver.wait(until.elementLocated(By.css('.card-item')), 15000);
+    await driver.sleep(3000);
+
+    const cardItems = await driver.findElements(By.css('.card-item'));
+    console.log(`  → ${cardItems.length} cartas encontradas em [${source.label}]`);
+
+    let saved = 0, skipped = 0;
+
+    for (const item of cardItems) {
+        try {
+            // Card name
+            const nameElement = await item.findElement(By.css('.invisible-label b'));
+            let cardName = (await nameElement.getAttribute('textContent')).trim();
+
+            // Price blocks
+            const priceBlocks = await item.findElements(By.css('.avgp-minprc'));
+
+            let minPrice = null;
+            let variation = null;
+
+            if (source.hasVariacao) {
+                // Pages with high/low variation: need at least 2 price blocks
+                if (priceBlocks.length < 2) {
+                    skipped++;
+                    continue;
+                }
+
+                // Min price is the last block
+                let minPriceText = await priceBlocks[priceBlocks.length - 1].getAttribute('textContent');
+                minPriceText = minPriceText.replace('R$', '').trim().replace(/\./g, '').replace(',', '.');
+                minPrice = parseFloat(minPriceText);
+
+                // Variation is the first block
+                let varText = await priceBlocks[0].getAttribute('textContent');
+                varText = varText.trim().replace(/\./g, '').replace(',', '.');
+                variation = parseFloat(varText);
+
+                // Check if it's negative (rank-down icon)
+                const icons = await priceBlocks[0].findElements(By.css('img[data-src*="rank-down"]'));
+                if (icons.length > 0) {
+                    variation = -Math.abs(variation);
+                }
+
+            } else {
+                // Hits page: only needs min price, variacao stays NULL
+                if (priceBlocks.length === 0) {
+                    skipped++;
+                    continue;
+                }
+                let minPriceText = await priceBlocks[priceBlocks.length - 1].getAttribute('textContent');
+                minPriceText = minPriceText.replace('R$', '').trim().replace(/\./g, '').replace(',', '.');
+                minPrice = parseFloat(minPriceText);
+                variation = null;
+            }
+
+            if (!cardName || isNaN(minPrice)) {
+                skipped++;
+                continue;
+            }
+
+            console.log(`  Saving [${source.label}]: ${cardName} | Min: R$${minPrice} | Var: ${variation ?? 'NULL'}`);
+
+            const upsertData = {
+                dia: today,
+                carta: cardName,
+                preco_min: minPrice,
+                variacao: variation   // null is allowed by the DB
+            };
+
+            const { error } = await supabase
+                .from('lista_cartas_dia')
+                .upsert(upsertData, { onConflict: 'dia,carta' });
+
+            if (error) {
+                console.error(`  Error saving ${cardName}: ${error.message}`);
+            } else {
+                saved++;
+            }
+
+        } catch (err) {
+            console.error('  Error processing card item:', err.message);
+        }
+    }
+
+    console.log(`  ✅ [${source.label}] concluído: ${saved} salvas, ${skipped} ignoradas.`);
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 async function runScraper() {
     let options = new chrome.Options();
-    options.addArguments('--headless=new'); // Run headless Chrome
+    options.addArguments('--headless=new');
     options.addArguments('--no-sandbox');
     options.addArguments('--disable-dev-shm-usage');
-    
-    // Força o Selenium a usar o driver global do sistema Linux (instalado direto no Action)
+
     let service = new chrome.ServiceBuilder('chromedriver');
-    
     let driver = await new Builder()
         .forBrowser('chrome')
         .setChromeOptions(options)
         .setChromeService(service)
         .build();
+
     try {
-        console.log("Navigating to LigaMagic...");
-        await driver.get('https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=1');
+        const today = new Date().toISOString().split('T')[0];
 
-        // Wait for the card items to load
-        console.log("Waiting for cards to load...");
-        await driver.wait(until.elementLocated(By.css('.card-item')), 15000);
-        
-        // Wait a little extra to ensure prices and variants load
-        await driver.sleep(3000);
-
-        let cardItems = await driver.findElements(By.css('.card-item'));
-        console.log(`Found ${cardItems.length} cards.`);
-
-        const today = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
-
-        for (let item of cardItems) {
-            try {
-                // Get Card Name
-                let nameElement = await item.findElement(By.css('.invisible-label b'));
-                let cardName = await nameElement.getAttribute('textContent');
-                cardName = cardName.trim();
-
-                // Get Price Blocks
-                let priceBlocks = await item.findElements(By.css('.avgp-minprc'));
-                
-                if (priceBlocks.length >= 2) {
-                    // Min Price is usually the last one (R$ XX,XX)
-                    let minPriceText = await priceBlocks[priceBlocks.length - 1].getAttribute('textContent');
-                    minPriceText = minPriceText.replace('R$', '').trim().replace(/\./g, '').replace(',', '.');
-                    let minPrice = parseFloat(minPriceText);
-
-                    // Variation is usually the first one (XX,XX)
-                    let varText = await priceBlocks[0].getAttribute('textContent');
-                    varText = varText.trim().replace(/\./g, '').replace(',', '.');
-                    let variation = parseFloat(varText);
-                    
-                    // Check if variation is negative (looking for down icon)
-                    let icons = await priceBlocks[0].findElements(By.css('img[data-src*="rank-down"]'));
-                    if (icons.length > 0) {
-                        variation = -Math.abs(variation);
-                    }
-
-                    console.log(`Saving: ${cardName} | Min: ${minPrice} | Var: ${variation}`);
-                    
-                    // Upsert into Supabase
-                    const { error } = await supabase
-                        .from('lista_cartas_dia')
-                        .upsert({
-                            dia: today,
-                            carta: cardName,
-                            preco_min: minPrice,
-                            variacao: variation
-                        }, { onConflict: 'dia,carta' });
-                        
-                    if (error) {
-                        console.error(`Error saving card ${cardName}:`, error.message);
-                    }
-                } else {
-                    console.log(`Could not find prices for card: ${cardName}`);
-                }
-            } catch (err) {
-                console.error("Error processing a card item:", err.message);
-            }
+        for (const source of SOURCES) {
+            await scrapePage(driver, source, today);
         }
-        
-        console.log("Scraping and insertion complete!");
-        
+
+        console.log('\n✅ Todos os scrapers concluídos com sucesso!');
+
     } catch (err) {
-        console.error("Scraper Error:", err);
+        console.error('Scraper Error:', err);
     } finally {
         await driver.quit();
     }
