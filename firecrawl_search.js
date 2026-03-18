@@ -31,33 +31,47 @@ async function runAdvancedSearch() {
 
         const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+        // Agora selecionamos também o campo TCG
         const { data: resRows, error: selectError } = await supabase
             .from('lista_cartas_dia')
-            .select('carta')
+            .select('carta, tcg')
             .gte('dia', ninetyDaysAgo)
             .not('carta', 'is', null);
 
         if (selectError) throw selectError;
 
-        const cards = [...new Set(resRows.map(r => r.carta))];
-        console.log(`[firecrawl_search.js] Found ${cards.length} distinct cards from the last 90 days.`);
+        // Criamos pares únicos (carta, tcg)
+        const uniqueCards = [];
+        const seen = new Set();
+        for (const r of resRows) {
+            const key = `${r.carta}|${r.tcg || 'MAGIC'}`;
+            if (!seen.has(key)) {
+                uniqueCards.push({ name: r.carta, tcg: r.tcg || 'MAGIC' });
+                seen.add(key);
+            }
+        }
+
+        console.log(`[firecrawl_search.js] Found ${uniqueCards.length} distinct card/tcg pairs from the last 90 days.`);
 
         const today = new Date().toISOString().split('T')[0];
 
-        for (const cardName of cards) {
-            console.log(`\n[firecrawl_search.js] --- Searching for: ${cardName} ---`);
-            const searchUrl = `https://www.ligamagic.com.br/?view=cards/card&card=${encodeURIComponent(cardName)}`;
+        for (const card of uniqueCards) {
+            console.log(`\n[firecrawl_search.js] --- Searching for: ${card.name} (${card.tcg}) ---`);
+            
+            // Define o domínio correto conforme o TCG
+            const domain = card.tcg === 'POKEMON' ? 'ligapokemon.com.br' : 'ligamagic.com.br';
+            const searchUrl = `https://www.${domain}/?view=cards/card&card=${encodeURIComponent(card.name)}`;
 
             try {
                 const scrapeResult = await api.scrapeUrl(searchUrl, {
                     formats: ['json'],
                     jsonOptions: {
-                        prompt: `Extract a list of records for the card ${cardName}. Each record must contain:
-- Nome_da_carta: card name (always "${cardName}")
+                        prompt: `Extract a list of records for the card ${card.name}. Each record must contain:
+- Nome_da_carta: card name (always "${card.name}")
 - Edição: edition name
 - Ano: year of the edition as a number
 - Raridade: rarity in Portuguese
-- Tipo_Carta: card variant (e.g.: "Normal", "Foil", "Surge Foil")
+- Tipo_Carta: card variant (e.g.: "Normal", "Foil", "Reverse Holo")
 - Qualidade: quality (e.g.: "NM", "SP")
 - Idioma: language (e.g.: "Português", "Inglês")
 - Preço_Mínimo: minimum price as a number in BRL
@@ -108,8 +122,9 @@ Extract ALL editions and variants found on the page.`,
                                     qualidade: record.Qualidade,
                                     idioma: record.Idioma,
                                     preco_min: record.Preço_Mínimo,
-                                    preco_medio: record.Preço_Médio
-                                }, { onConflict: 'data,carta,edicao,tipo_carta,qualidade,idioma' });
+                                    preco_medio: record.Preço_Médio,
+                                    tcg: card.tcg
+                                }, { onConflict: 'data,carta,edicao,tipo_carta,qualidade,idioma,tcg' });
 
                             if (error) throw error;
                         } catch (e) {
@@ -121,7 +136,7 @@ Extract ALL editions and variants found on the page.`,
                 }
 
             } catch (err) {
-                console.error(`  [firecrawl_search.js ERROR] ${cardName}:`, err.message);
+                console.error(`  [firecrawl_search.js ERROR] ${card.name}:`, err.message);
             }
 
             await new Promise(r => setTimeout(r, 2000));

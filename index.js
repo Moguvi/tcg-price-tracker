@@ -4,7 +4,7 @@
  */
 try {
     require('dotenv').config();
-} catch (_) { }
+} catch (_) {}
 
 const { createClient } = require('@supabase/supabase-js');
 const FirecrawlApp = require('@mendable/firecrawl-js').default;
@@ -29,18 +29,18 @@ const FORMATOS = [2, 5, 6, 7];
 
 const SOURCES = [
     ...FORMATOS.flatMap(f => [
-        { label: `Alta (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=${f}&order=2` },
-        { label: `Queda (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=${f}&order=2` },
-        { label: `Hits (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=2` },
+        { label: `Alta (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=${f}&order=2`, tcg: "MAGIC" },
+        { label: `Queda (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=${f}&order=2`, tcg: "MAGIC" },
+        { label: `Hits (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=2`, tcg: "MAGIC" },
     ]),
     // Pokémon Links (Static)
-    { label: "PKMN Alta", url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=alta&formato=&order=2" },
-    { label: "PKMN Queda", url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=queda&formato=&order=2" },
-    { label: "PKMN Hits", url: "https://www.ligapokemon.com.br/?view=cards/hits&show=alta&formato=&order=2" }
+    { label: "PKMN Alta",  url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=alta&formato=&order=2", tcg: "POKEMON" },
+    { label: "PKMN Queda", url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=queda&formato=&order=2", tcg: "POKEMON" },
+    { label: "PKMN Hits",  url: "https://www.ligapokemon.com.br/?view=cards/hits&show=alta&formato=&order=2", tcg: "POKEMON" }
 ];
 
 async function scrapePage(source, today) {
-    console.log(`\n  → [${source.label}] Investigando: ${source.url}`);
+    console.log(`\n  → [${source.label}] Investigando: ${source.url} (TCG: ${source.tcg})`);
 
     const isHits = source.label.includes("Hits");
 
@@ -48,7 +48,7 @@ async function scrapePage(source, today) {
         const scrapeResult = await api.scrapeUrl(source.url, {
             formats: ['json'],
             jsonOptions: {
-                prompt: isHits
+                prompt: isHits 
                     ? "Extract all card names and their corresponding number of views (Visualizações) from the table. Return a list of objects with 'name' and 'views'."
                     : "Extract all card names listed in this variation table. Return a list of strings.",
                 schema: isHits ? {
@@ -93,11 +93,12 @@ async function scrapePage(source, today) {
 
                 const { error } = await supabase
                     .from('lista_cartas_dia')
-                    .upsert({
-                        dia: today,
+                    .upsert({ 
+                        dia: today, 
                         carta: cardName,
-                        visualizacoes: views
-                    }, { onConflict: 'dia,carta' });
+                        visualizacoes: views,
+                        tcg: source.tcg
+                    }, { onConflict: 'dia,carta,tcg' });
 
                 if (!error) saved++;
             }
@@ -118,7 +119,6 @@ async function runScraper() {
     try {
         for (const source of SOURCES) {
             await scrapePage(source, today);
-            // Pequeno delay entre fontes para respeitar rate limits e fluidez
             await new Promise(r => setTimeout(r, 1000));
         }
 
@@ -135,20 +135,21 @@ async function deduplicateToday(today) {
     try {
         const { data, error } = await supabase
             .from('lista_cartas_dia')
-            .select('id, dia, carta, visualizacoes')
+            .select('id, dia, carta, tcg, visualizacoes')
             .eq('dia', today)
-            .order('visualizacoes', { ascending: false }); // Prioriza quem tem mais views no topo
+            .order('visualizacoes', { ascending: false });
 
         if (error) throw error;
 
-        const seen = new Map();
+        const seen = new Set();
         const toDelete = [];
 
         for (const row of data) {
-            if (seen.has(row.carta)) {
+            const key = `${row.carta}|${row.tcg}`;
+            if (seen.has(key)) {
                 toDelete.push(row.id);
             } else {
-                seen.set(row.carta, row.id);
+                seen.add(key);
             }
         }
 
