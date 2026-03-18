@@ -14,102 +14,139 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl || 'https://xxxxxxxx.supabase.co', supabaseKey || 'public-anon-key');
 console.log('Connected to Supabase via REST API');
 
-// Pages to scrape: { url, hasVariacao }
+// Sources to scrape
 const SOURCES = [
     {
         label: 'Alta',
-        url:   'https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=1',
+        url: 'https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=1',
         hasVariacao: true
     },
     {
         label: 'Queda',
-        url:   'https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=1',
+        url: 'https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=1',
         hasVariacao: true
     },
     {
         label: 'Hits (Mais Vistos)',
-        url:   'https://www.ligamagic.com.br/?view=cards/hits&formato=1',
-        hasVariacao: false   // variacao = NULL for this source
+        url: 'https://www.ligamagic.com.br/?view=cards/hits&formato=1',
+        hasVariacao: false  // variacao = NULL
     },
 ];
 
-// ─── Scrape one page ──────────────────────────────────────────────────────────
+// Parse "R$ 128,74" → 128.74  |  "34,35" → 34.35
+function parseBRL(text) {
+    if (!text) return null;
+    const cleaned = text.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? null : num;
+}
+
 async function scrapePage(driver, source, today) {
     console.log(`\n  → Acessando [${source.label}]: ${source.url}`);
     await driver.get(source.url);
 
-    await driver.wait(until.elementLocated(By.css('.card-item')), 15000);
+    // Wait for page to load — wait for any card link to appear
+    await driver.wait(until.elementLocated(By.css('a[href*="view=cards/card"]')), 15000);
     await driver.sleep(3000);
 
-    const cardItems = await driver.findElements(By.css('.card-item'));
-    console.log(`  → ${cardItems.length} cartas encontradas em [${source.label}]`);
+    // Switch to LIST view by clicking the list-view button (.tb-view-02)
+    try {
+        const listBtn = await driver.findElement(By.css('.tb-view-02'));
+        await listBtn.click();
+        await driver.sleep(2000);
+        console.log('  ✓ Modo lista ativado');
+    } catch (e) {
+        console.log('  ⚠ Botão de modo lista não encontrado, continuando...');
+    }
+
+    // Now extract rows from the table
+    let rows = [];
+    try {
+        await driver.wait(until.elementLocated(By.css('table tr')), 8000);
+        rows = await driver.findElements(By.css('table tr'));
+    } catch (e) {
+        console.log('  ⚠ Tabela não encontrada, tentando fallback...');
+    }
+
+    console.log(`  → ${rows.length} linhas na tabela de [${source.label}]`);
 
     let saved = 0, skipped = 0;
+    const today_iso = today;
 
-    for (const item of cardItems) {
+    for (let i = 0; i < rows.length; i++) {
         try {
-            // Card name
-            const nameElement = await item.findElement(By.css('.invisible-label b'));
-            let cardName = (await nameElement.getAttribute('textContent')).trim();
+            const cells = await rows[i].findElements(By.css('td'));
+            if (cells.length < 5) continue; // skip header or empty rows
 
-            // Price blocks
-            const priceBlocks = await item.findElements(By.css('.avgp-minprc'));
+            // Column 2 (index 1): card name via link text
+            let cardName = '';
+            try {
+                const nameLink = await cells[1].findElement(By.css('a'));
+                cardName = (await nameLink.getText()).trim();
+                if (!cardName) {
+                    // fallback: try textContent  
+                    cardName = (await cells[1].getAttribute('textContent')).trim();
+                }
+            } catch (_) {
+                cardName = (await cells[1].getAttribute('textContent')).trim();
+            }
+
+            if (!cardName) { skipped++; continue; }
 
             let minPrice = null;
             let variation = null;
 
             if (source.hasVariacao) {
-                // Pages with high/low variation: need at least 2 price blocks
-                if (priceBlocks.length < 2) {
-                    skipped++;
-                    continue;
+                // Alta/Queda layout:
+                // col[5] = variação (e.g. "34,35"), col[6] = preço mínimo (e.g. "R$ 128,74")
+                // col[4] may also be variacao depending on table structure — try both
+
+                // Try col index 6 for price first (7 cols usually: img, name, ed, rar, tipo, var, price)
+                if (cells.length >= 7) {
+                    const priceText = (await cells[6].getAttribute('textContent')).trim();
+                    const varText   = (await cells[5].getAttribute('textContent')).trim();
+                    minPrice = parseBRL(priceText);
+                    variation = parseBRL(varText);
+                } else if (cells.length >= 6) {
+                    // Fallback: 6-col layout
+                    const priceText = (await cells[5].getAttribute('textContent')).trim();
+                    const varText   = (await cells[4].getAttribute('textContent')).trim();
+                    minPrice = parseBRL(priceText);
+                    variation = parseBRL(varText);
                 }
 
-                // Min price is the last block
-                let minPriceText = await priceBlocks[priceBlocks.length - 1].getAttribute('textContent');
-                minPriceText = minPriceText.replace('R$', '').trim().replace(/\./g, '').replace(',', '.');
-                minPrice = parseFloat(minPriceText);
-
-                // Variation is the first block
-                let varText = await priceBlocks[0].getAttribute('textContent');
-                varText = varText.trim().replace(/\./g, '').replace(',', '.');
-                variation = parseFloat(varText);
-
-                // Check if it's negative (rank-down icon)
-                const icons = await priceBlocks[0].findElements(By.css('img[data-src*="rank-down"]'));
-                if (icons.length > 0) {
-                    variation = -Math.abs(variation);
-                }
+                // Check for rank-down icon (negative variation)
+                try {
+                    const downIcon = await rows[i].findElements(By.css('i.rank-down, img[src*="rank-down"], img[data-src*="rank-down"]'));
+                    if (downIcon.length > 0 && variation !== null) {
+                        variation = -Math.abs(variation);
+                    }
+                } catch (_) {}
 
             } else {
-                // Hits page: only needs min price, variacao stays NULL
-                if (priceBlocks.length === 0) {
-                    skipped++;
-                    continue;
+                // Hits layout: no variation column, price is in col[5]
+                if (cells.length >= 6) {
+                    const priceText = (await cells[5].getAttribute('textContent')).trim();
+                    minPrice = parseBRL(priceText);
                 }
-                let minPriceText = await priceBlocks[priceBlocks.length - 1].getAttribute('textContent');
-                minPriceText = minPriceText.replace('R$', '').trim().replace(/\./g, '').replace(',', '.');
-                minPrice = parseFloat(minPriceText);
                 variation = null;
             }
 
-            if (!cardName || isNaN(minPrice)) {
+            if (!cardName || minPrice === null || isNaN(minPrice)) {
                 skipped++;
                 continue;
             }
 
-            console.log(`  Saving [${source.label}]: ${cardName} | Min: R$${minPrice} | Var: ${variation ?? 'NULL'}`);
-
-            const upsertData = {
-                dia: today,
-                carta: cardName,
-                preco_min: minPrice,
-                variacao: variation   // null is allowed by the DB
-            };
+            console.log(`  [${source.label}] ${cardName} | Min: R$${minPrice} | Var: ${variation ?? 'NULL'}`);
 
             const { error } = await supabase
                 .from('lista_cartas_dia')
-                .upsert(upsertData, { onConflict: 'dia,carta' });
+                .upsert({
+                    dia: today_iso,
+                    carta: cardName,
+                    preco_min: minPrice,
+                    variacao: variation
+                }, { onConflict: 'dia,carta' });
 
             if (error) {
                 console.error(`  Error saving ${cardName}: ${error.message}`);
@@ -118,19 +155,19 @@ async function scrapePage(driver, source, today) {
             }
 
         } catch (err) {
-            console.error('  Error processing card item:', err.message);
+            console.error(`  Error on row ${i}:`, err.message);
         }
     }
 
-    console.log(`  ✅ [${source.label}] concluído: ${saved} salvas, ${skipped} ignoradas.`);
+    console.log(`  ✅ [${source.label}]: ${saved} salvas, ${skipped} ignoradas.`);
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
 async function runScraper() {
     let options = new chrome.Options();
     options.addArguments('--headless=new');
     options.addArguments('--no-sandbox');
     options.addArguments('--disable-dev-shm-usage');
+    options.addArguments('--window-size=1280,900');
 
     let service = new chrome.ServiceBuilder('chromedriver');
     let driver = await new Builder()
@@ -146,7 +183,7 @@ async function runScraper() {
             await scrapePage(driver, source, today);
         }
 
-        console.log('\n✅ Todos os scrapers concluídos com sucesso!');
+        console.log('\n✅ Todos os scrapers concluídos!');
 
     } catch (err) {
         console.error('Scraper Error:', err);
