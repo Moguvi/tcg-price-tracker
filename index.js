@@ -30,21 +30,33 @@ async function scrapePage(driver, source, today) {
         console.log(`\n  → [${source.label}]: ${source.url}`);
         await driver.get(source.url);
 
-        await driver.wait(until.elementLocated(By.css('body')), 20000);
-        await driver.sleep(5000);
+        const title = await driver.getTitle();
+        console.log(`  [DEBUG] Titulo da Pagina: ${title}`);
 
+        if (title.includes("Cloudflare") || title.includes("Just a moment")) {
+            console.log("  ⚠ Acesso Negado/Bloqueado por Cloudflare!");
+        }
+
+        // Wait for body first to ensure page loaded
+        await driver.wait(until.elementLocated(By.css('body')), 20000);
+        await driver.sleep(5000); // Give extra time for JS to render table
+
+        // Optional: Switch to list view if button exists
         try {
             const listBtn = await driver.findElement(By.css('.tb-view-02'));
             await listBtn.click();
             await driver.sleep(2000);
         } catch (_) {}
 
+        // Get all table rows - more generic selector to avoid Timeout on specific links
         let rows = [];
         try {
             await driver.wait(until.elementLocated(By.css('table tr')), 10000);
             rows = await driver.findElements(By.css('table tr'));
         } catch (e) {
             console.log(`  [${source.label}] ⚠ Nenhuma tabela encontrada.`);
+            const bodySnippet = (await driver.findElement(By.css('body')).getAttribute('innerText')).substring(0, 300);
+            console.log(`  [DEBUG] Body Snippet: ${bodySnippet.replace(/\n/g, ' ')}`);
             return;
         }
 
@@ -86,7 +98,8 @@ async function runScraper() {
     options.addArguments('--headless=new');
     options.addArguments('--no-sandbox');
     options.addArguments('--disable-dev-shm-usage');
-    options.addArguments('--window-size=1280,900');
+    options.addArguments('--window-size=1920,1080');
+    options.addArguments('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     let driver;
     try {
