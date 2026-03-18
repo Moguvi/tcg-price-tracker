@@ -27,11 +27,17 @@ const api = firecrawl.v1 || firecrawl;
 
 const FORMATOS = [1, 2, 3, 5, 6, 7, 8];
 
-const SOURCES = FORMATOS.flatMap(f => [
-    { label: `Alta (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=${f}&order=2` },
-    { label: `Queda (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=${f}&order=2` },
-    { label: `Hits (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=2` },
-]);
+const SOURCES = [
+    ...FORMATOS.flatMap(f => [
+        { label: `Alta (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=${f}&order=2` },
+        { label: `Queda (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=${f}&order=2` },
+        { label: `Hits (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=2` },
+    ]),
+    // Pokémon Links (Static)
+    { label: "PKMN Alta",  url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=alta&formato=&order=2" },
+    { label: "PKMN Queda", url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=queda&formato=&order=2" },
+    { label: "PKMN Hits",  url: "https://www.ligapokemon.com.br/?view=cards/hits&show=alta&formato=&order=2" }
+];
 
 async function scrapePage(source, today) {
     console.log(`\n  → [${source.label}] Investigando: ${source.url}`);
