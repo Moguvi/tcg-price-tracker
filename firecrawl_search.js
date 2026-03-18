@@ -31,7 +31,7 @@ async function runAdvancedSearch() {
 
         const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-        // Agora selecionamos também o campo TCG
+        // Selecionamos carta e TCG para saber qual site buscar
         const { data: resRows, error: selectError } = await supabase
             .from('lista_cartas_dia')
             .select('carta, tcg')
@@ -44,9 +44,10 @@ async function runAdvancedSearch() {
         const uniqueCards = [];
         const seen = new Set();
         for (const r of resRows) {
-            const key = `${r.carta}|${r.tcg || 'MAGIC'}`;
+            const tcg = (r.tcg || 'MAGIC').toUpperCase();
+            const key = `${r.carta}|${tcg}`;
             if (!seen.has(key)) {
-                uniqueCards.push({ name: r.carta, tcg: r.tcg || 'MAGIC' });
+                uniqueCards.push({ name: r.carta, tcg: tcg });
                 seen.add(key);
             }
         }
@@ -61,6 +62,8 @@ async function runAdvancedSearch() {
             // Define o domínio correto conforme o TCG
             const domain = card.tcg === 'POKEMON' ? 'ligapokemon.com.br' : 'ligamagic.com.br';
             const searchUrl = `https://www.${domain}/?view=cards/card&card=${encodeURIComponent(card.name)}`;
+            
+            console.log(`[firecrawl_search.js] Target URL: ${searchUrl}`);
 
             try {
                 const scrapeResult = await api.scrapeUrl(searchUrl, {
@@ -139,6 +142,7 @@ Extract ALL editions and variants found on the page.`,
                 console.error(`  [firecrawl_search.js ERROR] ${card.name}:`, err.message);
             }
 
+            // Delay entre cartas para dar respiro pro Firecrawl e site alvo
             await new Promise(r => setTimeout(r, 2000));
         }
 
