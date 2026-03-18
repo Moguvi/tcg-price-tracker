@@ -28,20 +28,40 @@ const api = firecrawl.v1 || firecrawl;
 const FORMATOS = [1, 2, 3, 5, 6, 7, 8];
 
 const SOURCES = FORMATOS.flatMap(f => [
-    { label: `Alta (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=${f}&order=1` },
-    { label: `Queda (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=${f}&order=1` },
-    { label: `Hits (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=1` },
+    { label: `Alta (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=${f}&order=2` },
+    { label: `Queda (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=${f}&order=2` },
+    { label: `Hits (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=2` },
 ]);
 
 async function scrapePage(source, today) {
     console.log(`\n  → [${source.label}] Investigando: ${source.url}`);
 
+    const isHits = source.label.includes("Hits");
+
     try {
         const scrapeResult = await api.scrapeUrl(source.url, {
             formats: ['json'],
             jsonOptions: {
-                prompt: "Extract all Magic: The Gathering card names listed in this variation/hits table. Return a simple list of strings.",
-                schema: {
+                prompt: isHits 
+                    ? "Extract all Magic: The Gathering card names and their corresponding number of views (Visualizações) from the table. Return a list of objects with 'name' and 'views'."
+                    : "Extract all Magic: The Gathering card names listed in this variation table. Return a list of strings.",
+                schema: isHits ? {
+                    type: 'object',
+                    properties: {
+                        cards: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    name: { type: 'string' },
+                                    views: { type: 'number' }
+                                },
+                                required: ['name', 'views']
+                            }
+                        }
+                    },
+                    required: ['cards']
+                } : {
                     type: 'object',
                     properties: {
                         cards: {
@@ -56,16 +76,22 @@ async function scrapePage(source, today) {
 
         if (scrapeResult.success && scrapeResult.json && scrapeResult.json.cards) {
             const cardsFound = scrapeResult.json.cards;
-            console.log(`  ✅ ${cardsFound.length} cartas identificadas pela IA.`);
+            console.log(`  ✅ ${cardsFound.length} registros identificados pela IA.`);
 
             let saved = 0;
-            for (const cardNameRaw of cardsFound) {
-                const cardName = cardNameRaw.trim();
+            for (const item of cardsFound) {
+                const cardName = (isHits ? item.name : item).trim();
+                const views = isHits ? (parseInt(item.views) || 0) : 0;
+
                 if (!cardName) continue;
 
                 const { error } = await supabase
                     .from('lista_cartas_dia')
-                    .upsert({ dia: today, carta: cardName }, { onConflict: 'dia,carta' });
+                    .upsert({ 
+                        dia: today, 
+                        carta: cardName,
+                        visualizacoes: views
+                    }, { onConflict: 'dia,carta' });
 
                 if (!error) saved++;
             }
@@ -80,7 +106,7 @@ async function scrapePage(source, today) {
 }
 
 async function runScraper() {
-    console.log('[index.js] Iniciando coleta de nomes de cartas via Firecrawl...');
+    console.log('[index.js] Iniciando coleta de nomes de cartas (e visualizações para Hits) via Firecrawl...');
     const today = new Date().toISOString().split('T')[0];
 
     try {
