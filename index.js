@@ -48,8 +48,16 @@ async function scrapePage(source, today) {
             ],
             jsonOptions: {
                 prompt: isHits 
-                    ? "Extract all card names and their corresponding number of views (Visualizações) from the table. Return a list of objects with 'name' and 'views'."
-                    : "Extract all card names listed in this variation table. Return a list of strings.",
+                    ? `Extract card names and their view counts from the main data list. 
+                       - ONLY extract from the actual results list/table.
+                       - IGNORE sidebar filters, navigation menus, and header/footer links.
+                       - Card names in Pokémon often look like "Name (number/total)".
+                       - Return a list of objects with 'name' and 'views'.`
+                    : `Extract ONLY the card names from the main variation table/list. 
+                       - IGNORE sidebar filters (like "Rara Holográfica", "Promocional", "Comum").
+                       - IGNORE navigation menus and buttons.
+                       - Card names in Pokémon often include their set number in parentheses, e.g., "Pikachu (123/456)".
+                       - Return a list of card name strings.`,
                 schema: isHits ? {
                     type: 'object',
                     properties: {
