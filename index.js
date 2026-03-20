@@ -107,7 +107,11 @@ async function scrapePage(source, today) {
                         tcg: source.tcg
                     }, { onConflict: 'dia,carta,tcg' });
 
-                if (!error) saved++;
+                if (!error) {
+                    saved++;
+                } else {
+                    console.error(`  ❌ Error saving ${cardName}:`, error.message);
+                }
             }
             console.log(`  ✅ [${source.label}]: ${saved} cartas salvas no Supabase.`);
         } else {
@@ -130,7 +134,7 @@ async function runScraper() {
         }
 
         console.log('\n✅ Todos os scrapers de lista concluídos!');
-        await deduplicateToday(today);
+        // await deduplicateToday(today); // ID missing, handled by upsert onConflict
 
     } catch (err) {
         console.error('Global Scraper Error:', err.message);
@@ -142,7 +146,7 @@ async function deduplicateToday(today) {
     try {
         const { data, error } = await supabase
             .from('lista_cartas_dia')
-            .select('id, dia, carta, tcg, visualizacoes')
+            .select('dia, carta, tcg, visualizacoes')
             .eq('dia', today)
             .order('visualizacoes', { ascending: false });
 
