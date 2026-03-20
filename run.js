@@ -42,24 +42,29 @@ function runScript(scriptName) {
 }
 
 async function runAll() {
+    const startTime = Date.now();
     try {
-        console.log("Iniciando a esteira de Extração de Preços (MTG Price Tracker)...\n");
+        console.log("==================================================");
+        console.log("🚀 INICIANDO ESTEIRA DE EXTRAÇÃO (MTG PRICE TRACKER)");
+        console.log("==================================================\n");
 
-        // 1º Passo: Raspagem básica via Selenium (Mínimos do Dia)
+        // 1º Passo: Raspagem de Listas (Alta/Queda/Hits)
         await runScript('index.js');
         
-        // Dá um pequeno tempo entre os dois só por garantia e fluidez
-        await new Promise(res => setTimeout(res, 2000));
+        console.log("\n--- Aguardando 5s para iniciar busca avançada ---\n");
+        await new Promise(res => setTimeout(res, 5000));
 
-        // 2º Passo: Pesquisa avançada via Firecrawl (Preços Históricos detalhados)
+        // 2º Passo: Pesquisa avançada via Firecrawl (Preços Históricos)
         await runScript('firecrawl_search.js');
 
-        console.log(`========================================`);
-        console.log(`🎉 Todos os scripts foram executados com sucesso!`);
-        console.log(`========================================`);
+        const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
+        console.log(`\n==================================================`);
+        console.log(`🎉 EXECUÇÃO CONCLUÍDA COM SUCESSO!`);
+        console.log(`⏱ Duração Total: ${duration} minutos`);
+        console.log(`==================================================`);
 
     } catch (error) {
-        console.error(`\n🚨 A execução foi interrompida devido a um erro:`, error.message);
+        console.error(`\n🚨 EXECUÇÃO INTERROMPIDA POR ERRO:`, error.message);
         process.exit(1);
     }
 }

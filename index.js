@@ -4,19 +4,10 @@
  */
 try {
     require('dotenv').config();
-} catch (_) {}
+} catch (_) { }
 
-const { createClient } = require('@supabase/supabase-js');
+const { supabase } = require('./lib/supabase');
 const FirecrawlApp = require('@mendable/firecrawl-js').default;
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-    console.warn("⚠ Warning: SUPABASE_URL or SUPABASE_KEY not found in environment.");
-}
-
-const supabase = createClient(supabaseUrl || 'https://xxxxxxxx.supabase.co', supabaseKey || 'public-anon-key');
 
 const firecrawl = new FirecrawlApp({
     apiKey: process.env.FIRECRAWL_API_KEY
@@ -29,14 +20,14 @@ const FORMATOS = [2, 5, 6, 7];
 
 const SOURCES = [
     ...FORMATOS.flatMap(f => [
-        { label: `Alta (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=${f}&order=2`, tcg: "MAGIC" },
+        { label: `Alta (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=alta&formato=${f}&order=2`, tcg: "MAGIC" },
         { label: `Queda (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/variacao&show=queda&formato=${f}&order=2`, tcg: "MAGIC" },
-        { label: `Hits (f=${f})`,  url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=2`, tcg: "MAGIC" },
+        { label: `Hits (f=${f})`, url: `https://www.ligamagic.com.br/?view=cards/hits&formato=${f}&order=2`, tcg: "MAGIC" },
     ]),
     // Pokémon Links (Static)
-    { label: "PKMN Alta",  url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=alta&formato=&order=2", tcg: "POKEMON" },
+    { label: "PKMN Alta", url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=alta&formato=&order=2", tcg: "POKEMON" },
     { label: "PKMN Queda", url: "https://www.ligapokemon.com.br/?view=cards/variacao&show=queda&formato=&order=2", tcg: "POKEMON" },
-    { label: "PKMN Hits",  url: "https://www.ligapokemon.com.br/?view=cards/hits&show=alta&formato=&order=2", tcg: "POKEMON" }
+    { label: "PKMN Hits", url: "https://www.ligapokemon.com.br/?view=cards/hits&show=alta&formato=&order=2", tcg: "POKEMON" }
 ];
 
 async function scrapePage(source, today) {
@@ -45,8 +36,16 @@ async function scrapePage(source, today) {
     const isHits = source.label.includes("Hits");
 
     try {
+        const isPokemon = source.tcg === "POKEMON";
+
         const scrapeResult = await api.scrapeUrl(source.url, {
             formats: ['json'],
+            actions: [
+                { type: 'wait', milliseconds: 3000 },
+                { type: 'click', selector: '.white-list-img' },
+                { type: 'wait', milliseconds: 3000 },
+                { type: 'scroll' }
+            ],
             jsonOptions: {
                 prompt: isHits 
                     ? "Extract all card names and their corresponding number of views (Visualizações) from the table. Return a list of objects with 'name' and 'views'."
@@ -93,8 +92,8 @@ async function scrapePage(source, today) {
 
                 const { error } = await supabase
                     .from('lista_cartas_dia')
-                    .upsert({ 
-                        dia: today, 
+                    .upsert({
+                        dia: today,
                         carta: cardName,
                         visualizacoes: views,
                         tcg: source.tcg

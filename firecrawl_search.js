@@ -4,19 +4,10 @@
  */
 try {
     require('dotenv').config();
-} catch (_) {}
+} catch (_) { }
 
-const { createClient } = require('@supabase/supabase-js');
+const { supabase } = require('./lib/supabase');
 const FirecrawlApp = require('@mendable/firecrawl-js').default;
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-    console.warn("⚠ Warning: SUPABASE_URL or SUPABASE_KEY not found in environment.");
-}
-
-const supabase = createClient(supabaseUrl || 'https://xxxxxxxx.supabase.co', supabaseKey || 'public-anon-key');
 
 const firecrawl = new FirecrawlApp({
     apiKey: process.env.FIRECRAWL_API_KEY
@@ -58,29 +49,28 @@ async function runAdvancedSearch() {
 
         for (const card of uniqueCards) {
             console.log(`\n[firecrawl_search.js] --- Searching for: ${card.name} (${card.tcg}) ---`);
-            
+
             // Define o domínio correto conforme o TCG
             const domain = card.tcg === 'POKEMON' ? 'ligapokemon.com.br' : 'ligamagic.com.br';
             const searchUrl = `https://www.${domain}/?view=cards/card&card=${encodeURIComponent(card.name)}`;
-            
+
             console.log(`[firecrawl_search.js] Target URL: ${searchUrl}`);
 
             try {
                 const scrapeResult = await api.scrapeUrl(searchUrl, {
                     formats: ['json'],
                     jsonOptions: {
-                        prompt: `Extract a list of records for the card ${card.name}. Each record must contain:
-- Nome_da_carta: card name (always "${card.name}")
-- Edição: edition name
-- Ano: year of the edition as a number
-- Raridade: rarity in Portuguese
-- Tipo_Carta: card variant (e.g.: "Normal", "Foil", "Reverse Holo")
-- Qualidade: quality (e.g.: "NM", "SP")
-- Idioma: language (e.g.: "Português", "Inglês")
-- Preço_Mínimo: minimum price as a number in BRL
-- Preço_Médio: average price as a number in BRL
-
-Extract ALL editions and variants found on the page.`,
+                        prompt: `Extract all edition records for the card "${card.name}" from the page.
+                        Each record must include:
+                        1. name: card name (strictly "${card.name}").
+                        2. edition: the name of the edition/set.
+                        3. year: release year as a number.
+                        4. rarity: rarity in Portuguese (e.g., Comum, Incomum, Rara, Mítica).
+                        5. variant: e.g., "Normal", "Foil", or "Reverse Holo"
+                        6. quality: condition e.g., NM, SP, MP, HP, D.
+                        7. language: e.g., "Português" or "Inglês".
+                        8. min_price: lowest price found for this variant in BRL (number).
+                        9. avg_price: average price for this variant in BRL (number).`,
                         schema: {
                             type: 'object',
                             properties: {
@@ -89,20 +79,21 @@ Extract ALL editions and variants found on the page.`,
                                     items: {
                                         type: 'object',
                                         properties: {
-                                            Nome_da_carta:  { type: 'string' },
-                                            Edição:         { type: 'string' },
-                                            Ano:            { type: 'number' },
-                                            Raridade:       { type: 'string' },
-                                            Tipo_Carta:     { type: 'string' },
-                                            Qualidade:      { type: 'string' },
-                                            Idioma:         { type: 'string' },
-                                            Preço_Mínimo:   { type: 'number' },
-                                            Preço_Médio:    { type: 'number' }
+                                            name: { type: 'string' },
+                                            edition: { type: 'string' },
+                                            year: { type: 'number' },
+                                            rarity: { type: 'string' },
+                                            variant: { type: 'string' },
+                                            quality: { type: 'string' },
+                                            language: { type: 'string' },
+                                            min_price: { type: 'number' },
+                                            avg_price: { type: 'number' }
                                         },
-                                        required: ['Nome_da_carta', 'Edição', 'Ano', 'Raridade', 'Tipo_Carta', 'Qualidade', 'Idioma', 'Preço_Mínimo', 'Preço_Médio']
+                                        required: ['name', 'edition', 'year', 'rarity', 'variant', 'quality', 'language', 'min_price', 'avg_price']
                                     }
                                 }
-                            }
+                            },
+                            required: ['records']
                         }
                     }
                 });
@@ -114,18 +105,18 @@ Extract ALL editions and variants found on the page.`,
                     for (const record of records) {
                         try {
                             const { error } = await supabase
-                                .from('his_precos_ligamagic')
+                                .from('his_precos_liga')
                                 .upsert({
                                     data: today,
-                                    carta: record.Nome_da_carta,
-                                    edicao: record.Edição,
-                                    ano: parseInt(record.Ano) || 0,
-                                    raridade: record.Raridade,
-                                    tipo_carta: record.Tipo_Carta,
-                                    qualidade: record.Qualidade,
-                                    idioma: record.Idioma,
-                                    preco_min: record.Preço_Mínimo,
-                                    preco_medio: record.Preço_Médio,
+                                    carta: record.name,
+                                    edicao: record.edition,
+                                    ano: parseInt(record.year) || 0,
+                                    raridade: record.rarity,
+                                    tipo_carta: record.variant,
+                                    qualidade: record.quality,
+                                    idioma: record.language,
+                                    preco_min: record.min_price,
+                                    preco_medio: record.avg_price,
                                     tcg: card.tcg
                                 }, { onConflict: 'data,carta,edicao,tipo_carta,qualidade,idioma,tcg' });
 

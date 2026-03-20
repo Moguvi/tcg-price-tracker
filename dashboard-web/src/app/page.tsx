@@ -91,7 +91,7 @@ export default function DashboardPage() {
   // Load all distinct carta names on mount
   useEffect(() => {
     supabase
-      .from('his_precos_ligamagic')
+      .from('his_precos_liga')
       .select('carta')
       .then(({ data }) => {
         if (data) {
@@ -108,7 +108,7 @@ export default function DashboardPage() {
       setFilters(f => ({ ...f, edicao: '', ano: '', raridade: '', tipo_carta: '' }));
       return;
     }
-    let q = supabase.from('his_precos_ligamagic').select('edicao,ano,raridade,tipo_carta').eq('carta', filters.carta);
+    let q = supabase.from('his_precos_liga').select('edicao,ano,raridade,tipo_carta').eq('carta', filters.carta);
     q.then(({ data }) => {
       if (!data) return;
       setEdicoes([...new Set(data.map((r: any) => r.edicao).filter(Boolean))].sort() as string[]);
@@ -127,7 +127,7 @@ export default function DashboardPage() {
     }
     setLoading(true);
     let q = supabase
-      .from('his_precos_ligamagic')
+      .from('his_precos_liga')
       .select('data,preco_min,preco_medio')
       .eq('carta', filters.carta)
       .order('data', { ascending: true });
@@ -207,7 +207,7 @@ export default function DashboardPage() {
             MTG Price Tracker
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3 }}>
-            Evolução de preços — his_precos_ligamagic
+            Evolução de preços — his_precos_liga
           </p>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8,
