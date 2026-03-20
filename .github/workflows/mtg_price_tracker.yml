@@ -1,0 +1,32 @@
+name: MTG Price Tracker Weekly Run
+
+on:
+  schedule:
+    # 11:00 UTC corresponde a 08:00 AM no horário de Brasília (BRT)
+    # Rodar todos os domingos (0)
+    - cron: '0 11 * * 0'
+  workflow_dispatch: # Permite rodar manualmente no GitHub
+
+jobs:
+  run-tracker:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Install Dependencies
+        run: npm install
+        
+      - name: Run Script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+        run: node run.js
